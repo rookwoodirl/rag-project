@@ -46,4 +46,33 @@ CREATE OR REPLACE VIEW active_tickets AS
 SELECT * FROM tickets
 WHERE is_active = TRUE
 AND (valid_to IS NULL OR valid_to > CURRENT_TIMESTAMP)
-AND valid_from <= CURRENT_TIMESTAMP; 
+AND valid_from <= CURRENT_TIMESTAMP;
+
+-- Create ticket_comments table
+CREATE TABLE IF NOT EXISTS ticket_comments (
+    id SERIAL PRIMARY KEY,
+    ticket_category VARCHAR(50) NOT NULL,
+    ticket_number VARCHAR(20) NOT NULL,
+    author VARCHAR(100) NOT NULL,
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    content TEXT NOT NULL,
+    links JSONB NULL,
+    attached_documents JSONB NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for ticket_comments
+CREATE INDEX IF NOT EXISTS idx_ticket_comments_ticket_number ON ticket_comments(ticket_number);
+CREATE INDEX IF NOT EXISTS idx_ticket_comments_category ON ticket_comments(ticket_category);
+CREATE INDEX IF NOT EXISTS idx_ticket_comments_author ON ticket_comments(author);
+CREATE INDEX IF NOT EXISTS idx_ticket_comments_timestamp ON ticket_comments(timestamp);
+
+-- Create composite index for faster ticket comment lookups
+CREATE INDEX IF NOT EXISTS idx_ticket_comments_ticket ON ticket_comments(ticket_category, ticket_number);
+
+-- Create trigger to update updated_at column for comments
+CREATE TRIGGER update_ticket_comments_updated_at
+BEFORE UPDATE ON ticket_comments
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column(); 

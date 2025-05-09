@@ -49,6 +49,12 @@ The server will be available at: http://127.0.0.1:8000
 - `DELETE /tickets/{ticket_number}`: Delete a ticket
 - `POST /initialize-db`: Initialize the database tables
 
+### Ticket Comments
+- `POST /tickets/{ticket_number}/comments`: Add a comment to a ticket
+- `GET /tickets/{ticket_number}/comments`: Get comments for a ticket
+- `PUT /tickets/comments/{comment_id}`: Update a comment
+- `DELETE /tickets/comments/{comment_id}`: Delete a comment
+
 ## Ticket System
 
 The application includes a ticket management system with versioning:
@@ -58,6 +64,8 @@ The application includes a ticket management system with versioning:
 - **Time Tracking**: Each version has valid_from/valid_to timestamps
 - **Filtering**: Tickets can be filtered by category and active status
 - **Pagination**: Results are paginated for performance
+- **Comments**: Full support for adding, updating and deleting comments on tickets
+- **Rich Content**: Comments support links and document attachments (stored as JSONB)
 
 ## Database Integration
 
@@ -87,6 +95,26 @@ curl -X PUT "http://localhost:8000/tickets/BUG-123" \
   -d '{
     "description": "Fix login page authentication error"
   }'
+```
+
+### Add a Comment to a Ticket
+```bash
+curl -X POST "http://localhost:8000/tickets/BUG-123/comments" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ticket_category": "bug",
+    "ticket_number": "BUG-123",
+    "author": "John Doe",
+    "content": "I found the root cause of this issue. It appears to be related to the authentication service.",
+    "links": [
+      {"url": "https://example.com/auth-docs", "title": "Auth Documentation"}
+    ]
+  }'
+```
+
+### Get Comments for a Ticket
+```bash
+curl -X GET "http://localhost:8000/tickets/BUG-123/comments"
 ```
 
 ### List Tickets

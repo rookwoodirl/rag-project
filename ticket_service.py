@@ -1,6 +1,7 @@
 from db import PostgresHandler
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
+import json
 
 class TicketService:
     """Service for managing tickets with proper versioning"""
@@ -278,6 +279,180 @@ class TicketService:
             
         except Exception as e:
             print(f"Error hard deleting ticket: {str(e)}")
+            raise
+    
+    # Ticket Comment Methods
+    
+    async def create_comment(self, 
+                           ticket_category: str, 
+                           ticket_number: str, 
+                           author: str, 
+                           content: str,
+                           links: Optional[List[Dict[str, str]]] = None,
+                           attached_documents: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+        """Create a new comment for a ticket"""
+        try:
+            # Verify ticket exists and is active
+            ticket = await self.get_ticket(ticket_number, ticket_category)
+            if not ticket:
+                raise ValueError(f"No active ticket found with number {ticket_number} in category {ticket_category}")
+            
+            # Convert lists to JSONB format
+            links_json = json.dumps(links) if links else None
+            documents_json = json.dumps(attached_documents) if attached_documents else None
+            
+            # Insert the comment
+            comment = await self.db.run_query(
+                """
+                INSERT INTO ticket_comments (
+                    ticket_category,
+                    ticket_number,
+                    author,
+                    content,
+                    links,
+                    attached_documents
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING *
+                """,
+                [
+                    ticket_category,
+                    ticket_number,
+                    author,
+                    content,
+                    links_json,
+                    documents_json
+                ],
+                fetch_type="one"
+            )
+            
+            return comment
+            
+        except Exception as e:
+            print(f"Error creating comment: {str(e)}")
+            raise
+    
+    async def get_comments(self, 
+                         ticket_number: str, 
+                         ticket_category: Optional[str] = None,
+                         limit: int = 100,
+                         offset: int = 0) -> Dict[str, Any]:
+        """Get comments for a specific ticket"""
+        try:
+            # Base query
+            query = """
+            SELECT * FROM ticket_comments
+            WHERE ticket_number = $1
+            """
+            count_query = """
+            SELECT COUNT(*) FROM ticket_comments
+            WHERE ticket_number = $1
+            """
+            
+            params = [ticket_number]
+            
+            # Add category filter if provided
+            if ticket_category:
+                query += " AND ticket_category = $2"
+                count_query += " AND ticket_category = $2"
+                params.append(ticket_category)
+            
+            # Add ordering and pagination
+            query += " ORDER BY timestamp DESC LIMIT $" + str(len(params) + 1) + " OFFSET $" + str(len(params) + 2)
+            params.extend([limit, offset])
+            
+            # Execute queries
+            comments = await self.db.run_query(query, params)
+            total = await self.db.run_query(count_query, params[:-2], fetch_type="val")
+            
+            # Process JSONB fields to proper Python objects
+            for comment in comments:
+                if comment.get("links") and isinstance(comment["links"], str):
+                    comment["links"] = json.loads(comment["links"])
+                if comment.get("attached_documents") and isinstance(comment["attached_documents"], str):
+                    comment["attached_documents"] = json.loads(comment["attached_documents"])
+            
+            return {
+                "comments": comments,
+                "total": total
+            }
+            
+        except Exception as e:
+            print(f"Error getting comments: {str(e)}")
+            raise
+    
+    async def update_comment(self, 
+                           comment_id: int,
+                           content: Optional[str] = None,
+                           links: Optional[List[Dict[str, str]]] = None,
+                           attached_documents: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+        """Update a ticket comment"""
+        try:
+            # Get current comment
+            current_comment = await self.db.run_query(
+                "SELECT * FROM ticket_comments WHERE id = $1",
+                [comment_id],
+                fetch_type="one"
+            )
+            
+            if not current_comment:
+                raise ValueError(f"Comment with ID {comment_id} not found")
+            
+            # Determine what needs to be updated
+            updates = []
+            params = []
+            
+            if content is not None:
+                updates.append(f"content = ${len(params) + 1}")
+                params.append(content)
+            
+            if links is not None:
+                updates.append(f"links = ${len(params) + 1}")
+                params.append(json.dumps(links))
+            
+            if attached_documents is not None:
+                updates.append(f"attached_documents = ${len(params) + 1}")
+                params.append(json.dumps(attached_documents))
+            
+            # If no updates, return current comment
+            if not updates:
+                return current_comment
+            
+            # Build and execute update query
+            update_query = f"""
+            UPDATE ticket_comments
+            SET {", ".join(updates)}
+            WHERE id = ${len(params) + 1}
+            RETURNING *
+            """
+            params.append(comment_id)
+            
+            updated_comment = await self.db.run_query(update_query, params, fetch_type="one")
+            
+            # Process JSONB fields to proper Python objects
+            if updated_comment.get("links") and isinstance(updated_comment["links"], str):
+                updated_comment["links"] = json.loads(updated_comment["links"])
+            if updated_comment.get("attached_documents") and isinstance(updated_comment["attached_documents"], str):
+                updated_comment["attached_documents"] = json.loads(updated_comment["attached_documents"])
+            
+            return updated_comment
+            
+        except Exception as e:
+            print(f"Error updating comment: {str(e)}")
+            raise
+    
+    async def delete_comment(self, comment_id: int) -> bool:
+        """Delete a ticket comment"""
+        try:
+            result = await self.db.run_query(
+                "DELETE FROM ticket_comments WHERE id = $1 RETURNING id",
+                [comment_id],
+                fetch_type="one"
+            )
+            
+            return result is not None
+            
+        except Exception as e:
+            print(f"Error deleting comment: {str(e)}")
             raise
     
     async def close(self):

@@ -43,4 +43,44 @@ class TicketResponse(TicketBase):
 
 class TicketList(BaseModel):
     tickets: List[TicketResponse]
+    total: int
+
+# Ticket comment models
+class Link(BaseModel):
+    url: str
+    title: Optional[str] = None
+
+class Document(BaseModel):
+    name: str
+    content_type: str
+    size: int
+    url: str
+
+class TicketCommentBase(BaseModel):
+    ticket_category: str
+    ticket_number: str
+    author: str
+    content: str
+    links: Optional[List[Link]] = None
+    attached_documents: Optional[List[Document]] = None
+
+class TicketCommentCreate(TicketCommentBase):
+    pass
+
+class TicketCommentUpdate(BaseModel):
+    content: Optional[str] = None
+    links: Optional[List[Link]] = None
+    attached_documents: Optional[List[Document]] = None
+
+class TicketCommentResponse(TicketCommentBase):
+    id: int
+    timestamp: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class TicketCommentList(BaseModel):
+    comments: List[TicketCommentResponse]
     total: int 

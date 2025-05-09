@@ -5,6 +5,7 @@ import json
 import base64
 from models import ChatRequest, ChatResponse, WebSearchRequest, WebSearchResponse
 from models import TicketCreate, TicketUpdate, TicketResponse, TicketList
+from models import TicketCommentCreate, TicketCommentUpdate, TicketCommentResponse, TicketCommentList
 from typing import Optional, List
 from dotenv import load_dotenv
 from ticket_service import TicketService
@@ -344,4 +345,92 @@ async def web_search_endpoint(
         results = await perplexity_client.search(request.query, request.num_results)
         return WebSearchResponse(results=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Web search error: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Web search error: {str(e)}")
+
+# Ticket Comment API endpoints
+@router.post("/tickets/{ticket_number}/comments", response_model=TicketCommentResponse, status_code=201)
+async def create_ticket_comment(
+    ticket_number: str = Path(..., description="The ticket number"),
+    request: TicketCommentCreate = Body(...),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    try:
+        comment = await ticket_service.create_comment(
+            request.ticket_category,
+            ticket_number,
+            request.author,
+            request.content,
+            request.links,
+            request.attached_documents
+        )
+        return comment
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create comment: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.get("/tickets/{ticket_number}/comments", response_model=TicketCommentList)
+async def get_ticket_comments(
+    ticket_number: str = Path(..., description="The ticket number"),
+    category: Optional[str] = Query(None, description="The ticket category"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of results to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    try:
+        result = await ticket_service.get_comments(
+            ticket_number=ticket_number,
+            ticket_category=category,
+            limit=limit,
+            offset=offset
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get comments: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.put("/tickets/comments/{comment_id}", response_model=TicketCommentResponse)
+async def update_ticket_comment(
+    comment_id: int = Path(..., description="The comment ID"),
+    request: TicketCommentUpdate = Body(...),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    try:
+        updated_comment = await ticket_service.update_comment(
+            comment_id=comment_id,
+            content=request.content,
+            links=request.links,
+            attached_documents=request.attached_documents
+        )
+        
+        if not updated_comment:
+            raise HTTPException(status_code=404, detail=f"Comment with ID {comment_id} not found")
+            
+        return updated_comment
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to update comment: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.delete("/tickets/comments/{comment_id}", status_code=204)
+async def delete_ticket_comment(
+    comment_id: int = Path(..., description="The comment ID"),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    try:
+        result = await ticket_service.delete_comment(comment_id=comment_id)
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Comment with ID {comment_id} not found")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to delete comment: {str(e)}")
+    finally:
+        await ticket_service.close() 
