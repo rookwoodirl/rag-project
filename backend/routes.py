@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Body, Depends, File, UploadFile, Form, Query, Path
+from fastapi import APIRouter, HTTPException, Body, Depends, File, UploadFile, Form, Query, Path, Header
 import httpx
 import os
 import json
@@ -10,11 +10,13 @@ from models import (
     DocumentUpdateMetadata, DocumentContent, DocumentSummary,
     SearchQuery, SearchResponse, SearchResult,
     TicketCreate, TicketUpdate, TicketResponse, TicketList,
-    TodoItemCreate, TodoItemUpdate, TodoItemResponse, TodoItemList
+    TodoItemCreate, TodoItemUpdate, TodoItemResponse, TodoItemList,
+    ChatRequest, ChatResponse, TicketChatRequest
 )
 
 from ragie_service import RagieService
 from ticket_service import TicketService
+from chat_service import ChatService
 
 # Load environment variables from .env file
 load_dotenv()
@@ -38,6 +40,13 @@ async def get_ticket_service():
     try:
         service = TicketService()
         return service
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Dependency to get chat service
+async def get_chat_service():
+    try:
+        return ChatService()
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -530,5 +539,61 @@ async def delete_todo_item(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=f"Failed to delete todo item: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_endpoint(
+    request: ChatRequest = Body(...),
+    chat_service: ChatService = Depends(get_chat_service)
+):
+    """
+    Chat with AI without specific context
+    
+    This endpoint uses OpenAI GPT-4.1 to respond to user queries.
+    """
+    try:
+        response = await chat_service.generate_response(
+            query=request.query,
+            history=request.history
+        )
+        return ChatResponse(response=response)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+@router.post("/chat/ticket", response_model=ChatResponse)
+async def ticket_chat_endpoint(
+    request: TicketChatRequest = Body(...),
+    chat_service: ChatService = Depends(get_chat_service),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """
+    Chat with AI about a specific ticket
+    
+    This endpoint uses OpenAI GPT-4.1 to respond to queries about a specific ticket.
+    The ticket's description is used as context for the AI assistant.
+    """
+    try:
+        # Get the ticket details
+        ticket = await ticket_service.get_ticket(
+            ticket_number=request.ticket_number,
+            ticket_category=request.ticket_category
+        )
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail=f"Ticket {request.ticket_number} not found")
+        
+        # Generate response with ticket context
+        response = await chat_service.generate_ticket_assisted_response(
+            query=request.query,
+            ticket_description=ticket["description"],
+            history=request.history
+        )
+        
+        return ChatResponse(response=response)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ticket chat error: {str(e)}")
     finally:
         await ticket_service.close() 

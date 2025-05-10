@@ -6,6 +6,12 @@ class ChatRequest(BaseModel):
     query: str
     history: Optional[List[dict]] = []
 
+class TicketChatRequest(BaseModel):
+    query: str
+    ticket_number: str
+    ticket_category: Optional[str] = None
+    history: Optional[List[dict]] = []
+
 class ChatResponse(BaseModel):
     response: str
 
