@@ -8,7 +8,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Base URL for the API
-API_URL="http://localhost:8000/api"
+API_URL="http://localhost:8080/api"
 
 # Create a temporary test file
 TEST_FILE="/tmp/test-document-$$.txt"

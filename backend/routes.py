@@ -8,10 +8,13 @@ from dotenv import load_dotenv
 from models import (
     Document, DocumentList, DocumentCreate, DocumentCreateFromUrl,
     DocumentUpdateMetadata, DocumentContent, DocumentSummary,
-    SearchQuery, SearchResponse, SearchResult
+    SearchQuery, SearchResponse, SearchResult,
+    TicketCreate, TicketUpdate, TicketResponse, TicketList,
+    TodoItemCreate, TodoItemUpdate, TodoItemResponse, TodoItemList
 )
 
 from ragie_service import RagieService
+from ticket_service import TicketService
 
 # Load environment variables from .env file
 load_dotenv()
@@ -27,6 +30,14 @@ def read_root():
 async def get_ragie_service():
     try:
         return RagieService()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Dependency to get ticket service
+async def get_ticket_service():
+    try:
+        service = TicketService()
+        return service
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -242,4 +253,235 @@ async def search_documents(
         detail = e.response.text if hasattr(e, "response") else str(e)
         raise HTTPException(status_code=status_code, detail=detail)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to search documents: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to search documents: {str(e)}")
+
+# Ticket API endpoints
+@router.post("/tickets", response_model=TicketResponse, status_code=201)
+async def create_ticket(
+    request: TicketCreate = Body(...),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Create a new ticket"""
+    try:
+        ticket = await ticket_service.create_ticket(
+            request.ticket_category,
+            request.ticket_number,
+            request.description,
+            request.completion_criteria
+        )
+        return ticket
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create ticket: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.get("/tickets", response_model=TicketList)
+async def list_tickets(
+    category: Optional[str] = Query(None, description="Filter by ticket category"),
+    active_only: bool = Query(True, description="Show only active tickets"),
+    include_todos: bool = Query(False, description="Include todo items"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of results to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """List all tickets with optional filtering"""
+    try:
+        result = await ticket_service.list_tickets(
+            category=category,
+            active_only=active_only,
+            include_todos=include_todos,
+            limit=limit,
+            offset=offset
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list tickets: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.get("/tickets/{ticket_number}", response_model=TicketResponse)
+async def get_ticket(
+    ticket_number: str = Path(..., description="The ticket number"),
+    category: Optional[str] = Query(None, description="The ticket category"),
+    include_history: bool = Query(False, description="Include ticket history"),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Get a specific ticket by number"""
+    try:
+        ticket = await ticket_service.get_ticket(
+            ticket_number=ticket_number,
+            ticket_category=category,
+            include_history=include_history
+        )
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail=f"Ticket {ticket_number} not found")
+            
+        return ticket
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to get ticket: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.put("/tickets/{ticket_number}", response_model=TicketResponse)
+async def update_ticket(
+    ticket_number: str = Path(..., description="The ticket number"),
+    request: TicketUpdate = Body(...),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Update a ticket"""
+    try:
+        updated_ticket = await ticket_service.update_ticket(
+            ticket_number=ticket_number,
+            ticket_category=request.ticket_category,
+            description=request.description,
+            completion_criteria=request.completion_criteria
+        )
+        
+        if not updated_ticket:
+            raise HTTPException(status_code=404, detail=f"Ticket {ticket_number} not found")
+            
+        return updated_ticket
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to update ticket: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.delete("/tickets/{ticket_number}", status_code=204)
+async def delete_ticket(
+    ticket_number: str = Path(..., description="The ticket number"),
+    category: Optional[str] = Query(None, description="The ticket category"),
+    hard_delete: bool = Query(False, description="Permanently delete the ticket"),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Delete a ticket (soft delete by default)"""
+    try:
+        if hard_delete:
+            result = await ticket_service.hard_delete_ticket(
+                ticket_number=ticket_number,
+                ticket_category=category
+            )
+            if result == 0:
+                raise HTTPException(status_code=404, detail=f"Ticket {ticket_number} not found")
+        else:
+            result = await ticket_service.delete_ticket(
+                ticket_number=ticket_number,
+                ticket_category=category
+            )
+            if not result:
+                raise HTTPException(status_code=404, detail=f"Ticket {ticket_number} not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to delete ticket: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.post("/initialize-db", status_code=200)
+async def initialize_database(
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Initialize the database tables"""
+    try:
+        result = await ticket_service.initialize_db()
+        if result:
+            return {"status": "Database initialized successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to initialize database")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error initializing database: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+# Todo Item API endpoints
+@router.post("/tickets/{ticket_number}/todos", response_model=TodoItemResponse, status_code=201)
+async def create_todo_item(
+    ticket_number: str = Path(..., description="The ticket number"),
+    request: TodoItemCreate = Body(...),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Add a todo item to a ticket"""
+    try:
+        todo_item = await ticket_service.add_todo_item(
+            ticket_number=ticket_number,
+            description=request.description,
+            position=request.position
+        )
+        return todo_item
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to add todo item: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.get("/tickets/{ticket_number}/todos", response_model=List[TodoItemResponse])
+async def list_todo_items(
+    ticket_number: str = Path(..., description="The ticket number"),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Get all todo items for a ticket"""
+    try:
+        todo_items = await ticket_service.get_todo_items(ticket_number)
+        return todo_items
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get todo items: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.put("/todos/{todo_id}", response_model=TodoItemResponse)
+async def update_todo_item(
+    todo_id: int = Path(..., description="The todo item ID"),
+    request: TodoItemUpdate = Body(...),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Update a todo item"""
+    try:
+        updated_item = await ticket_service.update_todo_item(
+            todo_id=todo_id,
+            description=request.description,
+            done=request.done,
+            position=request.position
+        )
+        
+        if not updated_item:
+            raise HTTPException(status_code=404, detail=f"Todo item with ID {todo_id} not found")
+            
+        return updated_item
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to update todo item: {str(e)}")
+    finally:
+        await ticket_service.close()
+
+@router.delete("/todos/{todo_id}", status_code=204)
+async def delete_todo_item(
+    todo_id: int = Path(..., description="The todo item ID"),
+    ticket_service: TicketService = Depends(get_ticket_service)
+):
+    """Delete a todo item"""
+    try:
+        result = await ticket_service.delete_todo_item(todo_id=todo_id)
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Todo item with ID {todo_id} not found")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to delete todo item: {str(e)}")
+    finally:
+        await ticket_service.close() 

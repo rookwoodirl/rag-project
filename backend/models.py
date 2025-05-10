@@ -74,3 +74,63 @@ class SearchResponse(BaseModel):
     """Response model for search/retrieval"""
     results: List[SearchResult]
 
+# Todo Item Models
+class TodoItemCreate(BaseModel):
+    """Model for creating a todo item"""
+    description: str
+    position: Optional[int] = None
+
+class TodoItemUpdate(BaseModel):
+    """Model for updating a todo item"""
+    description: Optional[str] = None
+    done: Optional[bool] = None
+    position: Optional[int] = None
+
+class TodoItemResponse(BaseModel):
+    """Model for todo item response"""
+    id: int
+    description: str
+    done: bool
+    position: int
+    created_at: str
+    updated_at: str
+    ticket_number: str
+
+class TodoItemList(BaseModel):
+    """Response model for listing todo items"""
+    todo_items: List[TodoItemResponse]
+    total: int
+
+# Ticket Models
+class TicketCreate(BaseModel):
+    """Model for creating a ticket"""
+    ticket_category: str
+    ticket_number: Optional[str] = None
+    description: str = ""
+    completion_criteria: Optional[str] = None
+
+class TicketUpdate(BaseModel):
+    """Model for updating a ticket"""
+    ticket_category: Optional[str] = None
+    description: Optional[str] = None
+    completion_criteria: Optional[str] = None
+
+class TicketResponse(BaseModel):
+    """Model for ticket response"""
+    id: int
+    ticket_number: str
+    ticket_category: str
+    description: str
+    completion_criteria: Optional[str] = None
+    status: str
+    created_at: str
+    updated_at: str
+    todo_items: List[TodoItemResponse] = []
+
+class TicketList(BaseModel):
+    """Response model for listing tickets"""
+    tickets: List[TicketResponse]
+    total: int
+    limit: int
+    offset: int
+
