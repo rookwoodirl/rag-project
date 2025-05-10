@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+from dotenv import load_dotenv
 from routes import router
+
+# Load environment variables early
+load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(title="RAG API Service")

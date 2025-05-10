@@ -391,17 +391,64 @@ async def delete_ticket(
 async def initialize_database(
     ticket_service: TicketService = Depends(get_ticket_service)
 ):
-    """Initialize the database tables"""
+    """Initialize database tables and create sample data if needed"""
     try:
+        # Initialize database tables
         result = await ticket_service.initialize_db()
-        if result:
-            return {"status": "Database initialized successfully"}
-        else:
+        
+        if not result:
             raise HTTPException(status_code=500, detail="Failed to initialize database")
+        
+        # Create sample tickets if none exist
+        conn = await ticket_service.get_connection()
+        try:
+            count = await conn.fetchval("SELECT COUNT(*) FROM tickets")
+            
+            if count == 0:
+                # Create sample tickets
+                await ticket_service.create_ticket(
+                    ticket_category="Vacation", 
+                    description="Plan summer vacation to Italy",
+                    completion_criteria="Flights, hotels, and itinerary booked"
+                )
+                
+                await ticket_service.create_ticket(
+                    ticket_category="Home Renovation", 
+                    description="Kitchen remodeling project",
+                    completion_criteria="New cabinets, countertops, and appliances installed"
+                )
+                
+                await ticket_service.create_ticket(
+                    ticket_category="Fitness", 
+                    description="Training for half marathon",
+                    completion_criteria="Complete a 21km run"
+                )
+                
+                sample_ticket = await ticket_service.get_ticket("VAC", include_todos=False)
+                if sample_ticket:
+                    # Add some todo items
+                    await ticket_service.add_todo_item(
+                        ticket_number=sample_ticket['ticket_number'],
+                        description="Research destinations"
+                    )
+                    
+                    await ticket_service.add_todo_item(
+                        ticket_number=sample_ticket['ticket_number'],
+                        description="Book flights"
+                    )
+                    
+                    await ticket_service.add_todo_item(
+                        ticket_number=sample_ticket['ticket_number'],
+                        description="Reserve accommodations"
+                    )
+        finally:
+            await ticket_service.pool.release(conn)
+        
+        return {"message": "Database initialized successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error initializing database: {str(e)}")
-    finally:
-        await ticket_service.close()
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to initialize database: {str(e)}")
 
 # Todo Item API endpoints
 @router.post("/tickets/{ticket_number}/todos", response_model=TodoItemResponse, status_code=201)
