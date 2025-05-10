@@ -16,7 +16,7 @@ echo "=============================="
 echo -e "\n${YELLOW}TEST 1: Check if API is running${NC}"
 RESPONSE=$(curl -s $API_URL/)
 echo "Response: $RESPONSE"
-if [[ $RESPONSE == *"API is running"* ]]; then
+if [[ $RESPONSE == *"healthy"* ]]; then
     echo -e "${GREEN}✓ API is running${NC}"
 else
     echo -e "${RED}✗ API is not running${NC}"
@@ -24,7 +24,7 @@ else
 fi
 
 # Prepare test document path
-TEST_DOC_PATH="backend/test/test-hello-world.txt"
+TEST_DOC_PATH="test/test-hello-world.txt"
 if [ ! -f "$TEST_DOC_PATH" ]; then
     echo -e "${RED}Test document not found at $TEST_DOC_PATH${NC}"
     exit 1

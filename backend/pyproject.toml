@@ -10,5 +10,6 @@ dependencies = [
     "python-multipart",
     "httpx",
     "python-dotenv",
-    "pydantic"
+    "pydantic",
+    "asyncpg>=0.30.0",
 ]
